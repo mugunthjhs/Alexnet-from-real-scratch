@@ -82,8 +82,8 @@ class Conv2D(Module):
             self.b = None
 
     def forward(self, x: Tensor) -> Tensor:
-        N, C, H, W = x.shape
-        C_out, C_in, kH, kW = self.W.shape
+        N, _, H, W = x.shape
+        C_out, _, kH, kW = self.W.shape
         H_out = (H + 2 * self.padding - kH) // self.stride + 1
         W_out = (W + 2 * self.padding - kW) // self.stride + 1
 

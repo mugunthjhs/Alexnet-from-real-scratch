@@ -14,30 +14,15 @@ class Linear(Module):
         self.out_features = out_features
         self.dtype = dtype
         self.init = init
-        
-        std = self._initialize_weights()
-        self.W = Tensor.randn((in_features,out_features),requires_grad=True,
-                              dtype=self.dtype) * std
+
+        w_shape = (out_features, in_features)
+        w_data = Tensor._initialize_weights(w_shape, init=init).T
+        self.W = Tensor(w_data, requires_grad=True)
+
         if bias:
-            self.b = Tensor.zeros(out_features, dtype=self.dtype,requires_grad=True)
+            self.b = Tensor.zeros(out_features, dtype=self.dtype, requires_grad=True)
         else:
             self.b = None
-
-    def _initialize_weights(self):
-        if self.init == "kaiming":
-            std = np.sqrt(2.0 / self.in_features)
-            return std
-        
-        elif self.init == "xavier":
-            std = np.sqrt(2.0 / (self.in_features + self.out_features))
-            return std
-        elif self.init == "normal":
-            std = 0.01
-            return std
-        else:
-            raise ValueError(
-                f"Unknown initialization method: {self.init}"
-            )
 
     def forward(self,x):
         if x.dtype != self.W.dtype:

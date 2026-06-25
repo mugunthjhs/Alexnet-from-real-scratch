@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Union, Tuple, Optional, List
+import math
 
 TensorLike = Union[
     'Tensor',
@@ -465,6 +466,10 @@ class Tensor:
             out._op = "expand_dims"
         return out
 
+    def newaxis(self, axis: int) -> 'Tensor':
+        """Add a new dimension at the specified axis (alias for expand_dims)."""
+        return self.expand_dims(axis)
+
     def __getitem__(self, key) -> 'Tensor':
         result = self.data[key]
         out = Tensor(
@@ -480,6 +485,43 @@ class Tensor:
             out._backward = _backward
             out._prev = {self}
             out._op = "getitem"
+        return out
+
+    def pad(
+        self,
+        pad_width: Union[int, Tuple[int, ...], Tuple[Tuple[int, int], ...]],
+        mode: str = 'constant',
+        constant_values: float = 0.0,
+    ) -> 'Tensor':
+        if isinstance(pad_width, int):
+            pad_width = ((pad_width, pad_width),) * self.ndim
+        elif isinstance(pad_width, tuple) and len(pad_width) == self.ndim:
+            if all(isinstance(x, int) for x in pad_width):
+                pad_width = tuple((x, x) for x in pad_width)
+
+        if not isinstance(pad_width, tuple) or len(pad_width) != self.ndim:
+            raise ValueError(
+                f"pad_width must match tensor dimensions; got {pad_width} for ndim={self.ndim}"
+            )
+
+        original_shape = self.shape
+        result = np.pad(self.data, pad_width, mode=mode, constant_values=constant_values)
+        out = Tensor(
+            result, requires_grad=self.requires_grad, is_leaf=False, dtype=result.dtype
+        )
+        if self.requires_grad:
+            def _backward():
+                if out.grad is None:
+                    return
+                slices = tuple(
+                    slice(pad_width[i][0], pad_width[i][0] + original_shape[i])
+                    for i in range(len(original_shape))
+                )
+                grad = out.grad[slices]
+                self.grad = grad if self.grad is None else self.grad + grad
+            out._backward = _backward
+            out._prev = {self}
+            out._op = f"pad{pad_width}"
         return out
 
     # ------------------------------------------------------------------ #
@@ -644,6 +686,26 @@ class Tensor:
             out._op = "abs"
         return out
 
+    def clip(self, min: Optional[float] = None, max: Optional[float] = None) -> 'Tensor':
+        """Clip tensor values to a range [min, max]."""
+        result = np.clip(self.data, min, max)
+        out = Tensor(
+            result, requires_grad=self.requires_grad, is_leaf=False, dtype=result.dtype
+        )
+        if self.requires_grad:
+            def _backward():
+                if out.grad is None:
+                    return
+                # Gradient is zero where clipped, passes through otherwise
+                mask = (self.data >= (min if min is not None else -np.inf)) & \
+                       (self.data <= (max if max is not None else np.inf))
+                grad = out.grad * mask.astype(self.dtype)
+                self.grad = grad if self.grad is None else self.grad + grad
+            out._backward = _backward
+            out._prev = {self}
+            out._op = f"clip({min}, {max})"
+        return out
+
     def astype(self, dtype: Union[np.dtype, type, str]) -> 'Tensor':
         try:
             target_dtype = np.dtype(dtype)
@@ -664,6 +726,31 @@ class Tensor:
             out._prev = {self}
             out._op = f"astype({target_dtype})"
         return out
+
+    # ------------------------------------------------------------------ #
+    #  Weight initialization                                               #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _initialize_weights(shape: Tuple[int, ...], init: str = "kaiming") -> np.ndarray:
+        """Initialize weights using specified method."""
+        if init == "kaiming":
+            if len(shape) == 2:
+                fan_in = shape[1]
+            elif len(shape) == 4:
+                fan_in = shape[1] * shape[2] * shape[3]
+            else:
+                fan_in = math.prod(shape[1:])
+            std = math.sqrt(2.0 / fan_in)
+        elif init == "xavier":
+            fan_in = math.prod(shape[1:])
+            fan_out = shape[0]
+            std = math.sqrt(2.0 / (fan_in + fan_out))
+        elif init == "normal":
+            std = 0.01
+        else:
+            raise ValueError(f"Unknown initialization method: {init}")
+        return (Tensor.randn(*shape, dtype=np.float32).data * std).astype(np.float32)
 
     # ------------------------------------------------------------------ #
     #  Static constructors                                                 #
