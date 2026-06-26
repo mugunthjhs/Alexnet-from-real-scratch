@@ -217,7 +217,9 @@ class Tensor:
         return self * (-1)
 
     def __sub__(self, other: TensorLike) -> 'Tensor':
-        return self + (-other)  # FIX: was redundant isinstance branch — both sides did -other
+        if not isinstance(other, Tensor):
+            other = Tensor(other, dtype=self.dtype)
+        return self + (-other)
 
     def __rsub__(self, other: TensorLike) -> 'Tensor':
         return (-self) + other
@@ -243,6 +245,29 @@ class Tensor:
             out._backward = _backward
             out._prev = {self}
             out._op = f"**{power}"
+        return out
+
+    def __rpow__(self, base: Union[int, float]) -> 'Tensor':
+        if not isinstance(base, (int, float)):
+            raise TypeError(
+                f"base must be int or float, got {type(base).__name__}"
+            )
+        result = base ** self.data
+        out = Tensor(
+            result,
+            requires_grad=self.requires_grad,
+            is_leaf=False,
+            dtype=result.dtype,
+        )
+        if self.requires_grad:
+            def _backward():
+                if out.grad is None:
+                    return
+                grad = out.grad * result * math.log(base)
+                self.grad = grad if self.grad is None else self.grad + grad
+            out._backward = _backward
+            out._prev = {self}
+            out._op = f"{base}**"
         return out
 
     def __truediv__(self, other: TensorLike) -> 'Tensor':
@@ -356,11 +381,12 @@ class Tensor:
         if sorted(axes) != list(range(self.ndim)):
             raise ValueError(f"invalid axis permutation {axes}")
 
+        result = np.transpose(self.data, axes)
         out = Tensor(
-            np.transpose(self.data, axes),
+            result,
             requires_grad=self.requires_grad,
             is_leaf=False,
-            dtype=self.dtype,
+            dtype=result.dtype,
         )
         if self.requires_grad:
             reverse_axes = tuple(np.argsort(axes))
@@ -376,11 +402,12 @@ class Tensor:
 
     def flatten(self) -> 'Tensor':
         original_shape = self.shape
+        result = self.data.flatten()
         out = Tensor(
-            self.data.flatten(),
+            result,
             requires_grad=self.requires_grad,
             is_leaf=False,
-            dtype=self.dtype,
+            dtype=result.dtype,
         )
         if self.requires_grad:
             def _backward():
@@ -395,11 +422,12 @@ class Tensor:
 
     def ravel(self) -> 'Tensor':
         original_shape = self.shape
+        result = np.ravel(self.data)
         out = Tensor(
-            np.ravel(self.data),
+            result,
             requires_grad=self.requires_grad,
             is_leaf=False,
-            dtype=self.dtype,
+            dtype=result.dtype,
         )
         if self.requires_grad:
             def _backward():
@@ -499,7 +527,9 @@ class Tensor:
                 if out.grad is None:
                     return
                 grad = np.zeros_like(self.data)
-                grad[key] = out.grad
+                # np.add.at accumulates on repeated indices (fancy indexing);
+                # plain grad[key] = out.grad would lose gradient on duplicates.
+                np.add.at(grad, key, out.grad)
                 self.grad = grad if self.grad is None else self.grad + grad
             out._backward = _backward
             out._prev = {self}
@@ -612,7 +642,7 @@ class Tensor:
 
     def max(
         self,
-        axis: Optional[int] = None,
+        axis: Optional[Union[int, Tuple[int, ...]]] = None,
         keepdims: bool = False,
     ) -> 'Tensor':
         result = np.max(self.data, axis=axis, keepdims=keepdims)
@@ -620,6 +650,7 @@ class Tensor:
             result, requires_grad=self.requires_grad, is_leaf=False, dtype=result.dtype
         )
         if self.requires_grad:
+            ndim = self.ndim  # capture at creation, not at backward time
             def _backward():
                 if out.grad is None:
                     return
@@ -627,9 +658,14 @@ class Tensor:
                     mask = self.data == result
                     grad = (mask * 1.0) * out.grad
                 else:
-                    max_vals = result if keepdims else np.expand_dims(result, axis)
+                    max_vals = result
+                    g = out.grad
+                    if not keepdims:
+                        axes = (axis,) if isinstance(axis, int) else axis
+                        for ax in sorted(a if a >= 0 else a + ndim for a in axes):
+                            max_vals = np.expand_dims(max_vals, ax)
+                            g = np.expand_dims(g, ax)
                     mask = self.data == max_vals
-                    g = out.grad if keepdims else np.expand_dims(out.grad, axis)
                     grad = (mask * 1.0) * g
                 self.grad = grad if self.grad is None else self.grad + grad
             out._backward = _backward
@@ -858,167 +894,3 @@ class Tensor:
         )
 
 
-
-
-
-
-
-
-
-
-
-# def test_tensor():
-#     print("\n" + "=" * 60)
-#     print("TESTING TENSOR CLASS")
-#     print("=" * 60)
-
-#     print("\n===== 1. Creation =====")
-#     print("zeros:", Tensor.zeros(2, 3).shape)
-#     print("ones:", Tensor.ones((2, 3)).shape)
-#     print("randn:", Tensor.randn(2, 2).shape)
-#     print("rand:", Tensor.rand(2, 2).shape)
-#     print("arange:", Tensor.arange(5).shape)
-#     print("✓ Creation works")
-
-#     print("\n===== 2. Arithmetic Operations =====")
-#     a = Tensor([1, 2, 3], requires_grad=True)
-#     b = Tensor([4, 5, 6], requires_grad=True)
-#     assert (a + b).shape == (3,)
-#     assert (a - b).shape == (3,)
-#     assert (a * b).shape == (3,)
-#     assert (a / b).shape == (3,)
-#     assert (a ** 2).shape == (3,)
-#     assert (-a).shape == (3,)
-#     print("✓ All arithmetic operations work")
-
-#     print("\n===== 3. Shape Operations =====")
-#     x = Tensor([[1, 2, 3], [4, 5, 6]])
-#     assert x.reshape(3, 2).shape == (3, 2)
-#     assert x.T.shape == (3, 2)
-#     assert x.flatten().shape == (6,)
-#     assert x.expand_dims(0).shape == (1, 2, 3)
-#     assert Tensor([[[1, 2, 3]]]).squeeze().shape == (3,)
-#     print("✓ All shape operations work")
-
-#     print("\n===== 4. Indexing =====")
-#     x = Tensor([[1, 2, 3], [4, 5, 6]])
-#     assert x[0].shape == (3,)
-#     assert x[:, 1].shape == (2,)
-#     print("✓ Indexing works")
-
-#     print("\n===== 5. Matrix Operations =====")
-#     m1 = Tensor([[1, 2], [3, 4]], requires_grad=True)
-#     m2 = Tensor([[5, 6], [7, 8]], requires_grad=True)
-#     result = m1 @ m2
-#     assert result.shape == (2, 2)
-#     print("✓ Matrix multiply works")
-
-#     print("\n===== 6. Reduction Operations =====")
-#     r = Tensor([[1., 2., 3.], [4., 5., 6.]])
-#     assert r.sum().shape == ()
-#     assert r.sum(axis=0).shape == (3,)
-#     assert r.mean().shape == ()
-#     assert r.mean(axis=1).shape == (2,)
-#     assert r.max().shape == ()
-#     assert r.max(axis=1).shape == (2,)
-#     print("✓ All reduction operations work")
-
-#     print("\n===== 7. Element-wise Math =====")
-#     t = Tensor([1., 2., 4.])
-#     assert t.exp().shape == (3,)
-#     assert t.log().shape == (3,)
-#     assert t.sqrt().shape == (3,)
-#     assert Tensor([-1., -2., 3.]).abs().shape == (3,)
-#     print("✓ All element-wise operations work")
-
-#     print("\n===== 8. astype() - DTYPE CONVERSION =====")
-#     x_f32 = Tensor([1.5, 2.7, 3.2], requires_grad=True, dtype=np.float32)
-#     print(f"Original dtype: {x_f32.dtype}")
-
-#     x_f64 = x_f32.astype(np.float64)
-#     print(f"Converted to float64: {x_f64.dtype}")
-#     assert x_f64.dtype == np.float64
-#     print("✓ astype to float64 works")
-
-#     x_f16 = x_f32.astype(np.float16)
-#     print(f"Converted to float16: {x_f16.dtype}")
-#     assert x_f16.dtype == np.float16
-#     print("✓ astype to float16 works")
-
-#     print("\n===== 9. astype() with Gradients =====")
-#     x = Tensor([1.0, 2.0, 3.0], requires_grad=True, dtype=np.float32)
-#     y = x.astype(np.float64)
-#     z = y * 2.0
-#     z.backward(np.ones_like(z.data))
-#     print(f"Input dtype: {x.dtype}")
-#     print(f"Converted dtype: {y.dtype}")
-#     print(f"Gradient dtype: {x.grad.dtype}")
-#     print(f"Gradient values: {x.grad}")
-#     assert x.grad.dtype == np.float32
-#     assert np.allclose(x.grad, [2.0, 2.0, 2.0])
-#     print("✓ Gradient flow through astype works")
-
-#     print("\n===== 10. Autograd: Basic Operations =====")
-#     x = Tensor([1., 2., 3.], requires_grad=True)
-#     y = Tensor([4., 5., 6.], requires_grad=True)
-#     z = x + y
-#     z.backward(np.ones_like(z.data))
-#     assert np.allclose(x.grad, [1., 1., 1.])
-#     assert np.allclose(y.grad, [1., 1., 1.])
-#     print("✓ Addition backward works")
-
-#     x.zero_grad()
-#     y.zero_grad()
-#     z = x * y
-#     z.backward(np.ones_like(z.data))
-#     assert np.allclose(x.grad, y.data)
-#     assert np.allclose(y.grad, x.data)
-#     print("✓ Multiplication backward works")
-
-#     print("\n===== 11. Autograd: Complex Graph =====")
-#     x = Tensor([1., 2., 3.], requires_grad=True)
-#     loss = (x * x).sum()
-#     loss.backward()
-#     print(f"Loss: {loss.data}")
-#     print(f"x.grad: {x.grad}")
-#     assert np.allclose(x.grad, [2., 4., 6.])
-#     print("✓ Complex autograd works")
-
-#     print("\n===== 12. Autograd: Matrix Multiply =====")
-#     a = Tensor([[1., 2.], [3., 4.]], requires_grad=True)
-#     b = Tensor([[5., 6.], [7., 8.]], requires_grad=True)
-#     out = (a @ b).sum()
-#     out.backward()
-#     assert a.grad is not None
-#     assert b.grad is not None
-#     print("✓ Matrix multiply backward works")
-
-#     print("\n===== 13. max() with Boolean Mask (No np.astype) =====")
-#     x = Tensor([-2.0, 1.0, 3.0, -1.0], requires_grad=True)
-#     y = x.max()
-#     y.backward()
-#     print(f"Input: {x.data}")
-#     print(f"Max: {y.data}")
-#     print(f"Gradients: {x.grad}")
-#     assert x.grad[2] == 1.0
-#     assert x.grad[0] == 0.0
-#     print("✓ max() with boolean mask works")
-
-#     print("\n===== 14. Mixed Operations =====")
-#     x = Tensor([1.0, 2.0, 3.0], requires_grad=True, dtype=np.float32)
-#     x_f64 = x.astype(np.float64)
-#     y = x_f64 * 2.0
-#     z = y.sum()
-#     z.backward()
-#     print(f"x dtype: {x.dtype}, x.grad dtype: {x.grad.dtype}")
-#     print(f"Gradient: {x.grad}")
-#     assert np.allclose(x.grad, [2.0, 2.0, 2.0])
-#     print("✓ Mixed dtype operations work")
-
-#     print("\n" + "=" * 60)
-#     print("ALL TESTS PASSED ✓✓✓")
-#     print("=" * 60)
-
-
-# if __name__ == "__main__":
-#     test_tensor()

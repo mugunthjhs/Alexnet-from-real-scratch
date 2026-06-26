@@ -1,5 +1,9 @@
-from .module import Module
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from tensor import Tensor
+from .module import Module
 
 
 class Sequential(Module):

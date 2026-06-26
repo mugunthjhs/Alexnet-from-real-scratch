@@ -177,7 +177,6 @@ class DtypeContext:
         self.default_dtype = validate_dtype(default_dtype)
 
     def __enter__(self):
-        self._original_dtype = np.get_default_dtype(np.ndarray)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
