@@ -1,5 +1,6 @@
 from .module import Module
 from .linear import Linear
+from .CrossEntropyLoss import CrossEntropyLoss
 
 __all__ = [
     "Module",
@@ -15,4 +16,5 @@ __all__ = [
     "Dropout",
     "LocalResponseNorm",
     "Flatten",
+    "CrossEntropyLoss",
 ]

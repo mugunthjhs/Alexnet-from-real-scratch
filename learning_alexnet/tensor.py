@@ -393,6 +393,25 @@ class Tensor:
             out._op = "flatten"
         return out
 
+    def ravel(self) -> 'Tensor':
+        original_shape = self.shape
+        out = Tensor(
+            np.ravel(self.data),
+            requires_grad=self.requires_grad,
+            is_leaf=False,
+            dtype=self.dtype,
+        )
+        if self.requires_grad:
+            def _backward():
+                if out.grad is None:
+                    return
+                grad = out.grad.reshape(original_shape)
+                self.grad = grad if self.grad is None else self.grad + grad
+            out._backward = _backward
+            out._prev = {self}
+            out._op = "ravel"
+        return out
+
     def squeeze(self, axis: Optional[Union[int, Tuple[int, ...]]] = None) -> 'Tensor':
         original_shape = self.shape
         if axis is not None:

@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tensor import Tensor
 
-
 def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     """
     Numerically stable softmax cross-entropy loss.
