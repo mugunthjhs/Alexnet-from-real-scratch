@@ -5,7 +5,7 @@ Run from the project root, e.g.::
     python training/train.py --model alexnet --download
     python training/train.py --model vgg --epochs 20 --batch-size 16 --lr 0.01
 
-The tinytorch framework is pure NumPy autograd, so convolution is slow on
+The numgrad framework is pure NumPy autograd, so convolution is slow on
 224x224 images. For a quick smoke test, cap the work per epoch::
 
     python training/train.py --model alexnet --download --limit-batches 5
@@ -20,11 +20,11 @@ import time
 
 import numpy as np
 
-# tinytorch uses flat imports (from tensor import Tensor, from nn import ...),
+# numgrad uses flat imports (from tensor import Tensor, from nn import ...),
 # which rely on the package root being on sys.path. This script lives in
-# training/, so tinytorch sits one directory up.
+# training/, so numgrad sits one directory up.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_PROJECT_ROOT, "tinytorch"))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "numgrad"))
 
 from models import AlexNet, VGG19          # noqa: E402
 from nn import CrossEntropyLoss            # noqa: E402
