@@ -20,7 +20,9 @@ class ReLU(Module):
             def _backward():
                 if out.grad is None:
                     return
-                grad = out.grad * ((result > 0) * 1.0)
+                # multiply by the bool mask directly; `(result > 0) * 1.0`
+                # would promote float32 grads to float64 and double memory.
+                grad = out.grad * (result > 0)
                 _x.grad = grad if _x.grad is None else _x.grad + grad
 
             out._backward = _backward

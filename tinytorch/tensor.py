@@ -656,7 +656,9 @@ class Tensor:
                     return
                 if axis is None:
                     mask = self.data == result
-                    grad = (mask * 1.0) * out.grad
+                    # multiply by bool mask directly — `mask * 1.0` would
+                    # promote the result to float64.
+                    grad = mask * out.grad
                 else:
                     max_vals = result
                     g = out.grad
@@ -666,7 +668,7 @@ class Tensor:
                             max_vals = np.expand_dims(max_vals, ax)
                             g = np.expand_dims(g, ax)
                     mask = self.data == max_vals
-                    grad = (mask * 1.0) * g
+                    grad = mask * g
                 self.grad = grad if self.grad is None else self.grad + grad
             out._backward = _backward
             out._prev = {self}
