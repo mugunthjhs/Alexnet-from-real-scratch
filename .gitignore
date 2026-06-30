@@ -3,3 +3,4 @@ venv
 .claude
 testing
 __pycache__
+data
